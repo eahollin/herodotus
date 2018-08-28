@@ -1,3 +1,3 @@
 # Configuration used with vertx:run for local development.
-message: "Hello from Che, %s!"
+message: "Hello this is Che fer realz, %s!"
 level: INFO
