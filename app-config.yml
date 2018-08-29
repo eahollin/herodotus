@@ -1,2 +1,2 @@
-message : "Hello %s from a ConfigMap!"
+message : "This greeting is from Che, %s!"
 level : INFO
