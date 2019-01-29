@@ -1,12 +1,10 @@
 package io.openshift.booster;
 
-import io.vertx.config.ConfigRetriever;
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Future;
-import io.vertx.core.json.JsonObject;
-import io.vertx.ext.web.Router;
-import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.handler.StaticHandler;
+import static io.vertx.core.http.HttpHeaders.CONTENT_TYPE;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,7 +12,15 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
 
-import static io.vertx.core.http.HttpHeaders.CONTENT_TYPE;
+import io.vertx.config.ConfigRetriever;
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
+import io.vertx.ext.web.handler.StaticHandler;
+import io.vertx.kafka.client.consumer.KafkaConsumer;
+import io.vertx.kafka.client.producer.KafkaProducer;
 
 /**
  *
@@ -33,9 +39,32 @@ public class HttpApplication extends AbstractVerticle {
 
         Router router = Router.router(vertx);
         router.get("/api/greeting").handler(this::greeting);
+        router.get("/api/pacify").handler(this::pacify);
         router.get("/health").handler(rc -> rc.response().end("OK"));
         router.get("/").handler(StaticHandler.create());
 
+        Map<String, String> prod_config = new HashMap<>();
+        prod_config.put("bootstrap.servers", "107.23.103.79:9092");
+        prod_config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        prod_config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        prod_config.put("acks", "1");
+
+        // use producer for interacting with Apache Kafka
+        KafkaProducer<String, String> producer = KafkaProducer.create(vertx, prod_config);
+        
+        Map<String, String> cons_config = new HashMap<>();
+        cons_config.put("bootstrap.servers", "107.23.103.79:9092");
+        cons_config.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        cons_config.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        cons_config.put("group.id", "test");
+        cons_config.put("auto.offset.reset", "earliest");
+        cons_config.put("enable.auto.commit", "false");
+
+        // use consumer for interacting with Apache Kafka
+        KafkaConsumer<String, String> consumer = KafkaConsumer.create(vertx, cons_config);
+        
+        int hash = consumer.hashCode();
+        
         retrieveMessageTemplateFromConfiguration()
             .setHandler(ar -> {
                 // Once retrieved, store it and start the HTTP server.
@@ -46,7 +75,7 @@ public class HttpApplication extends AbstractVerticle {
                     .listen(
                         // Retrieve the port from the configuration,
                         // default to 8080.
-                        config().getInteger("http.port", 8080));
+                        config().getInteger("http.port", 9190));
 
             });
 
@@ -78,7 +107,22 @@ public class HttpApplication extends AbstractVerticle {
         loggerConfig.setLevel(Level.getLevel(level));
         ctx.updateLoggers();
     }
+    
+    private void pacify(RoutingContext rc) {
+    	String arg = rc.request().getParam("arg");
+        if (arg == null) {
+            arg = "arg";
+        }
 
+        LOGGER.debug("Replying to request, parameter={}", arg);
+        JsonObject response = new JsonObject()
+            .put("content", String.format(message, arg));
+
+        rc.response()
+            .putHeader(CONTENT_TYPE, "application/json; charset=utf-8")
+            .end(response.encodePrettily());
+    }
+    
     private void greeting(RoutingContext rc) {
         if (message == null) {
             rc.response().setStatusCode(500)
